@@ -238,7 +238,7 @@ def main():
                 st.write("Debug: Starting analysis for video source")
                 logo_stats = detect_logos(
                     source=video_source,
-                    model_path=r'model\best.pt',
+                    model_path=os.path.join("model", "best.pt"),
                     stframe=stframe,
                     duration_container=duration_container,
                     fps_container=fps_container,
