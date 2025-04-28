@@ -3,7 +3,7 @@ ultralytics
 opencv-python
 numpy
 psutil
-torch==2.0.0+cu118
-torchvision==0.15.1+cu118
+torch
+torchvision
 yt-dlp 
 validators
