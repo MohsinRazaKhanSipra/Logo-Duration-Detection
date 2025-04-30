@@ -5,5 +5,5 @@ numpy==1.26.4
 psutil
 torch
 torchvision
-yt-dlp 
+yt-dlp==2025.3.31
 validators
