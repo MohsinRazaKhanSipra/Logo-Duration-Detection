@@ -52,7 +52,7 @@ def plot_logo_frequency(chart_placeholder, frame_num):
     num_logos = len(logos)
     
     # Debug number of logos
-    st.write(f"Debug: Number of logos: {num_logos}")
+    #st.write(f"Debug: Number of logos: {num_logos}")
     
     # Dynamic bar width: smaller for fewer logos, scaling up as more are detected
     if num_logos <= 3:
@@ -71,7 +71,7 @@ def plot_logo_frequency(chart_placeholder, frame_num):
     chart_width = min(1200, 80 * num_logos)
     
     # Debug bar width and chart width
-    st.write(f"Debug: Frame {frame_num} - BarWidth: {data['BarWidth'].iloc[0]}px, BarWidthRaw: {bar_width}, ChartWidth: {chart_width}px")
+    #st.write(f"Debug: Frame {frame_num} - BarWidth: {data['BarWidth'].iloc[0]}px, BarWidthRaw: {bar_width}, ChartWidth: {chart_width}px")
     
     # Create Altair chart
     chart = alt.Chart(data).mark_bar().encode(
@@ -134,7 +134,7 @@ def detect_logos(source, model_path, stframe, duration_container, fps_container,
     # Load model
     try:
         model = YOLO(model_path).to(device)
-        st.write(f"Debug: Model loaded. Classes: {model.names}")
+       # st.write(f"Debug: Model loaded. Classes: {model.names}")
     except Exception as e:
         stframe.error(f"Error: Failed to load YOLO model: {str(e)}")
         return {}
