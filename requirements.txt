@@ -1,10 +1,10 @@
-streamlit
-opencv-python-headless
-numpy 
-ultralytics
-psutil
+streamlit==1.20.0 
+opencv-python-headless==4.9.0.80 
+numpy==1.26.4 
+ultralytics==8.2.48 
+psutil==5.9.8 
 torch
 torchvision
 yt-dlp
-validators
-requests
+validators==0.22.0 
+requests==2.31.0
