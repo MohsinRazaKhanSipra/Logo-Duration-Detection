@@ -6,91 +6,84 @@
 # It allows users to upload a video file (MP4, AVI, MOV) or provide a YouTube link, 
 # configure detection settings, and display analytics like logo durations, 
 # logo frequencies, video metadata, and system performance.
-# Integrated with a Django API for frame data.
 
 import streamlit as st
 import cv2
 from logos_detection import detect_logos
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import tempfile
 import yt_dlp
 import validators
-import requests
-from pathlib import Path
-
-# Configure page and grayish theme
-st.set_page_config(page_title="LogoSense Analytics", layout="wide")
-st.markdown("""
-    <style>
-    .stApp { background-color: #e5e7eb; color: #1f2937; }
-    .sidebar .sidebar-content { background-color: #374151; color: #d1d5db; }
-    .stButton>button {
-        background-color: #6b7280;
-        color: white;
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        border: none;
-    }
-    .stButton>button:hover { background-color: #4b5563; }
-    h1, h2, h3 { color: #1f2937; font-family: 'Arial', sans-serif; }
-    .stMarkdown { font-family: 'Arial', sans-serif; }
-    .stat-box {
-        background-color: #f3f4f6;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #d1d5db;
-        text-align: left;
-        width: 100%;
-        box-sizing: border-box;
-        overflow: hidden;
-    }
-    .stat-value {
-        font-size: 16px;
-        margin-top: 5px;
-        word-wrap: break-word;
-    }
-    .stFileUploader label, .stSlider label, .stRadio label, .stTextInput label { color: #d1d5db; font-weight: 500; }
-    .stDownloadButton>button {
-        background-color: #6b7280;
-        color: white;
-        border-radius: 8px;
-        font-weight: 500;
-    }
-    .stDownloadButton>button:hover { background-color: #4b5563; }
-    .stSpinner > div > div { border-color: #6b7280 transparent transparent transparent; }
-    .stProgress > div > div { background-color: #6b7280; }
-    .chart-container {
-        min-height: 450px;
-        max-width: 1200px;
-        position: relative;
-        transition: none;
-        overflow-x: auto;
-        overflow-y: hidden;
-        display: block;
-    }
-    .chart-card {
-        background-color: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-        padding: 15px;
-        border: 1px solid #d1d5db;
-        margin-bottom: 20px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Initialize session state
-if 'logo_stats' not in st.session_state:
-    st.session_state.logo_stats = {}
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = {}
-if 'uploaded_file' not in st.session_state:
-    st.session_state.uploaded_file = None
 
 def main():
+    # Configure page and grayish theme
+    st.set_page_config(page_title="LogoSense Analytics", layout="wide")
+    st.markdown("""
+        <style>
+        .stApp { background-color: #e5e7eb; color: #1f2937; }
+        .sidebar .sidebar-content { background-color: #374151; color: #d1d5db; }
+        .stButton>button {
+            background-color: #6b7280;
+            color: white;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+        }
+        .stButton>button:hover { background-color: #4b5563; }
+        h1, h2, h3 { color: #1f2937; font-family: 'Arial', sans-serif; }
+        .stMarkdown { font-family: 'Arial', sans-serif; }
+        .stat-box {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            text-align: left;
+            width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .stat-value {
+            font-size: 16px;
+            margin-top: 5px;
+            word-wrap: break-word;
+        }
+        .stFileUploader label, .stSlider label, .stRadio label, .stTextInput label { color: #d1d5db; font-weight: 500; }
+        .stDownloadButton>button {
+            background-color: #6b7280;
+            color: white;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        .stDownloadButton>button:hover { background-color: #4b5563; }
+        .stSpinner > div > div { border-color: #6b7280 transparent transparent transparent; }
+        .stProgress > div > div { background-color: #6b7280; }
+        .chart-container {
+            min-height: 450px;
+            max-width: 1200px;
+            position: relative;
+            transition: none;
+            overflow-x: auto;
+            overflow-y: hidden;
+            display: block;
+        }
+        .chart-card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+            padding: 15px;
+            border: 1px solid #d1d5db;
+            margin-bottom: 20px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Initialize session state
+    if 'logo_stats' not in st.session_state:
+        st.session_state.logo_stats = {}
+
     # Sidebar
     with st.sidebar:
         st.header("🛠️ Control Panel")
@@ -120,12 +113,10 @@ def main():
         video_file = None
         youtube_url = None
         if input_method == "Upload Video":
-            allowed_types = ["mp4", "avi", "mov", "mpeg", "m4v"]  # Expanded video formats
             video_file = st.file_uploader(
                 "🎬 Upload Video",
-                type=allowed_types,
-                help="Upload an MP4, AVI, MOV, MPEG, or M4V file.",
-                key="video_uploader"
+                type=["mp4", "avi", "mov"],
+                help="Upload an MP4, AVI, or MOV file."
             )
         else:
             youtube_url = st.text_input(
@@ -134,95 +125,16 @@ def main():
                 help="Enter a valid YouTube video URL."
             )
 
-        # Login for Django API
-        st.markdown("**Django API Login**")
-        username = st.text_input("Username", key="username")
-        password = st.text_input("Password", type="password", key="password")
-        if st.button("Login"):
-            login(username, password)
-
     # Main layout
     st.title("🎥 LogoSense Analytics")
     st.markdown("**Real-time logo detection and analytics for your video content.**")
 
-    # Containers for sections
+    # Containers for sections (initially hidden)
     video_stream_container = st.container()
     logo_duration_container = st.container()
     logo_frequency_container = st.container()
     system_performance_container = st.container()
     metadata_container = st.container()
-
-    # Django API functions
-    def login(username, password):
-        try:
-            response = requests.post(
-                "http://127.0.0.1:8000/api/login/",
-                json={"username": username, "password": password},
-                timeout=5
-            )
-            if response.status_code == 200:
-                data = response.json()
-                st.session_state.user_data = {
-                    "token": data.get("token"),
-                    "is_section_admin": data.get("is_section_admin", False),
-                    "is_hq_admin": data.get("is_hq_admin", False),
-                    "section": data.get("section"),
-                    "expires_at": data.get("expires_at")
-                }
-                st.success("Login successful!")
-            else:
-                st.error(f"Login failed: {response.json().get('error', 'Unknown error')}")
-        except requests.RequestException as e:
-            st.error(f"Login failed: {str(e)}")
-
-    def check_and_renew_token():
-        user_data = st.session_state.user_data
-        token = user_data.get("token")
-        expires_at = user_data.get("expires_at")
-        if not token or not expires_at:
-            return False
-        try:
-            expires_at_dt = datetime.fromisoformat(expires_at)
-            if expires_at_dt - datetime.utcnow() < timedelta(minutes=5):
-                response = requests.post(
-                    "http://127.0.0.1:8000/api/renew-token/",
-                    headers={"Authorization": f"Token {token}"},
-                    timeout=5
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.user_data.update({
-                        "token": data.get("token"),
-                        "expires_at": data.get("expires_at")
-                    })
-                else:
-                    return False
-        except (ValueError, requests.RequestException):
-            return False
-        return True
-
-    def fetch_frames():
-        if not check_and_renew_token():
-            st.error("Session expired. Please log in again.")
-            return None
-        token = st.session_state.user_data.get("token")
-        try:
-            response = requests.get(
-                "http://127.0.0.1:8000/api/frames/",
-                headers={"Authorization": f"Token {token}"},
-                timeout=5
-            )
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
-                return None
-            else:
-                st.error(f"Failed to fetch frames: {response.status_code}")
-                return None
-        except requests.RequestException as e:
-            st.error(f"Error fetching frames: {str(e)}")
-            return None
 
     # Process video
     def get_youtube_stream_url(url):
@@ -260,24 +172,11 @@ def main():
         video_source = None
         temp_file = None
         if input_method == "Upload Video" and video_file:
-            # Validate file extension
-            try:
-                file_extension = Path(video_file.name).suffix.lower().lstrip(".")
-                allowed_types = ["mp4", "avi", "mov", "mpeg", "m4v"]
-                if file_extension not in allowed_types:
-                    st.error(f"Invalid file type: {file_extension}. Please upload a {', '.join(allowed_types)} file.")
-                    st.session_state.uploaded_file = None
-                    st.rerun()
-                else:
-                    # Handle uploaded video
-                    temp_file = os.path.join(tempfile.gettempdir(), f"temp_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_extension}")
-                    with open(temp_file, "wb") as f:
-                        f.write(video_file.read())
-                    video_source = temp_file
-            except Exception as e:
-                st.error(f"Error processing uploaded file: {str(e)}")
-                st.session_state.uploaded_file = None
-                st.rerun()
+            # Handle uploaded video
+            temp_file = os.path.join(tempfile.gettempdir(), f"temp_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+            with open(temp_file, "wb") as f:
+                f.write(video_file.read())
+            video_source = temp_file
         elif input_method == "YouTube Link" and youtube_url:
             # Validate and get YouTube stream URL
             if not validators.url(youtube_url):
@@ -335,19 +234,11 @@ def main():
                     with metadata_inner_container:
                         st.markdown("<div class='stat-box'><b>No metadata available</b><br><span class='stat-value'>Unable to retrieve video metadata.</span></div>", unsafe_allow_html=True)
 
-            # Check model file
-            model_path = os.path.join("model", "best.pt")
-            if not os.path.exists(model_path):
-                st.error(f"Model file not found at {model_path}. Please ensure 'model/best.pt' exists.")
-                if temp_file and os.path.exists(temp_file):
-                    os.remove(temp_file)
-                return
-
             with st.spinner("Processing video with GPU acceleration..."):
                 st.write("Debug: Starting analysis for video source")
                 logo_stats = detect_logos(
                     source=video_source,
-                    model_path=model_path,
+                    model_path=os.path.join("model", "best.pt"),
                     stframe=stframe,
                     duration_container=duration_container,
                     fps_container=fps_container,
@@ -379,23 +270,6 @@ def main():
                         file_name=f"processed_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4",
                         mime="video/mp4"
                     )
-
-            # Display frames from Django API
-            if st.session_state.user_data.get("token"):
-                frames = fetch_frames()
-                if frames:
-                    st.subheader("Frame Analysis")
-                    for frame in frames:
-                        st.write(f"Frame ID: {frame['id']}")
-                        if frame.get("image_raw"):
-                            try:
-                                temp_path = "temp_frame.jpg"
-                                urllib.request.urlretrieve(frame["image_raw"], temp_path)
-                                img = cv2.imread(temp_path)
-                                if img is not None:
-                                    st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption=f"Frame {frame['id']}")
-                            except Exception as e:
-                                st.error(f"Error processing frame {frame['id']}: {str(e)}")
 
 if __name__ == "__main__":
     main()
