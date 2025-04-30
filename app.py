@@ -252,9 +252,8 @@ def main():
             
             # Debug logo_stats
             with logo_frequency_container:
-                if logo_stats:
+                if not logo_stats:
                    # st.write(f"Debug: Final logo_stats = {logo_stats}")
-                else:
                     st.warning("No logos detected. Frequency chart cannot be displayed. Try lowering the confidence threshold (e.g., 0.1) or using a YOLO model trained for logos in this video (e.g., Coca-Cola, FIFA).")
 
             # Clean up temporary file for uploaded video
