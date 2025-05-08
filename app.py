@@ -242,7 +242,7 @@ def main():
                 with open(model_path, "wb") as f:
                     f.write(uploaded_model.read())
         else:
-            model_path = os.path.join("model", "best.pt")
+            model_path = os.path.join("model", "yolov12_new_dataset.pt")
 
         conf_thres = st.slider(
             "Confidence Threshold",
