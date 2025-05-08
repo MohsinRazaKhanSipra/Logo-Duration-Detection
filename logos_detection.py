@@ -1,11 +1,16 @@
 # Project: LogoSense Analytics
 # File: logos_detection.py
 # Description: 
-# This file contains the core logic for detecting logos in videos using the YOLOv8 model from Ultralytics. 
+# This file contains the core logic for detecting logos in videos using a custom YOLOv8 model. 
 # It processes video frames, draws bounding boxes around detected logos, tracks logo durations, 
-# monitors system performance (FPS, memory, CPU), and updates a single real-time logo frequency chart using Altair. 
-# The processed frames and analytics are displayed in real-time via Streamlit, 
-# and the output video can optionally be saved.
+# monitors system performance (FPS, memory, CPU), and updates real-time charts using Altair.
+# The frequency chart is a horizontal bar chart based on the number of distinct appearances of a logo, 
+# where an appearance is a continuous sequence of seconds in which the logo is present. 
+# Consecutive seconds count as one appearance. The chart is sorted by frequency (highest to lowest) 
+# with alphabetical tie-breaking, displayed top to bottom.
+# The duration chart is a horizontal bar chart sorted by duration (highest to lowest) with alphabetical tie-breaking,
+# displayed top to bottom. Both charts use a fixed width with scrolling supported via CSS in app.py.
+# Supports loading a custom model from a specified path with enhanced GPU/CPU handling.
 
 from ultralytics import YOLO
 import cv2
@@ -41,72 +46,61 @@ def draw_boxes(img, bboxes, labels):
     return img
 
 def plot_logo_frequency(chart_placeholder, frame_num):
-    """Update the Altair bar chart for logo frequency with professional styling."""
+    """Update the Altair horizontal bar chart for logo frequency with professional styling."""
     logo_stats = st.session_state.logo_stats
     if not logo_stats:
-        chart_placeholder.warning("No logos detected yet.")
+        chart_placeholder.warning("No logos detected yet for frequency chart.")
         return
     
-    logos = sorted(logo_stats.keys())
-    frequencies = [logo_stats[logo]["frames"] for logo in logos]
+    # Sort logos by frequency (descending) and alphabetically for ties
+    logos = sorted(
+        logo_stats.keys(),
+        key=lambda x: (-logo_stats[x]["frequency"], x)
+    )
+    frequencies = [logo_stats[logo]["frequency"] for logo in logos]
     num_logos = len(logos)
     
-    # Debug number of logos
-    #st.write(f"Debug: Number of logos: {num_logos}")
+    # Dynamic bar height
+    bar_height = max(20, min(40, 400 / num_logos))
+    chart_height = max(200, num_logos * bar_height)
     
-    # Dynamic bar width: smaller for fewer logos, scaling up as more are detected
-    if num_logos <= 3:
-        bar_width = 0.05  # Narrower for 1-3 logos (25px)
-    else:
-        bar_width = min(0.6 / num_logos, 0.15)  # Scale inversely, max 0.15 (25-75px)
-    
-    # Create DataFrame for chart
+    # Create DataFrame
     data = pd.DataFrame({
         'Logo': logos,
-        'Frames': frequencies,
-        'BarWidth': [bar_width * 500] * num_logos  # Scaling yields 25-75px
+        'Appearances': frequencies
     })
-    
-    # Dynamic chart width: ~80px per logo, capped at 1200px
-    chart_width = min(1200, 80 * num_logos)
-    
-    # Debug bar width and chart width
-    #st.write(f"Debug: Frame {frame_num} - BarWidth: {data['BarWidth'].iloc[0]}px, BarWidthRaw: {bar_width}, ChartWidth: {chart_width}px")
     
     # Create Altair chart
     chart = alt.Chart(data).mark_bar().encode(
-        x=alt.X('Logo:N', title='Logos', sort=None, axis=alt.Axis(
-            labelAngle=45,
-            labelFont='Arial',
+        y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
+            labelFont='Roboto',
             labelFontSize=10,
             labelColor='#1f2937',
             titleColor='#1f2937',
-            labelOverlap=False,  # Force all labels to display
             labelPadding=10,
-            labelLimit=200  # Support longer labels
+            labelLimit=200
         )),
-        y=alt.Y('Frames:Q', title='Frame Count', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
-        size=alt.Size('BarWidth:Q', scale=None, legend=None),
+        x=alt.X('Appearances:Q', title='Appearance Count', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
         color=alt.condition(
             alt.datum._hover,
-            alt.ColorValue('#6b7280'),  # Lighten on hover
-            alt.ColorValue('#4b5563')   # Default blue-gray
+            alt.ColorValue('#6b7280'),
+            alt.ColorValue('#4b5563')
         ),
-        tooltip=['Logo:N', 'Frames:Q']
+        tooltip=['Logo:N', 'Appearances:Q']
     ).properties(
-        title=f"Logo Frequency (Frame {frame_num})",
-        width=chart_width,  # Dynamic width
-        height=400
+        title=f"Logo Frequency",
+        width=1000,
+        height=chart_height
     ).configure(
         background='transparent'
     ).configure_axis(
-        titleFont='Arial',
+        titleFont='Roboto',
         titleFontSize=14,
         grid=True,
         gridColor='#e5e7eb',
         gridOpacity=0.5
     ).configure_title(
-        font='Arial',
+        font='Roboto',
         fontSize=18,
         color='#1f2937',
         anchor='middle'
@@ -116,27 +110,114 @@ def plot_logo_frequency(chart_placeholder, frame_num):
         strokeWidth=1
     ).configure_view(
         stroke=None
-    ).interactive()  # Enable hover effects
+    ).interactive()
     
-    # Display chart in placeholder
+    # Display chart
     try:
-        chart_placeholder.altair_chart(chart)
+        chart_placeholder.altair_chart(chart, use_container_width=True)
     except Exception as e:
-        st.error(f"Error rendering chart: {str(e)}")
+        chart_placeholder.error(f"Error rendering frequency chart: {str(e)}")
 
-def detect_logos(source, model_path, stframe, duration_container, fps_container, mem_container, cpu_container,
-                 chart_placeholder, conf_thres=0.25, nosave=True):
-    # Force CUDA if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type != "cuda":
-        stframe.warning("GPU not detected. Running on CPU.")
+def plot_logo_duration(duration_placeholder, frame_num, total_duration):
+    """Update the Altair horizontal bar chart for logo durations with professional styling."""
+    logo_stats = st.session_state.logo_stats
+    if not logo_stats:
+        duration_placeholder.warning("No logos detected yet for duration chart.")
+        return
+    
+    # Sort logos by duration (descending) and alphabetically for ties
+    logos = sorted(
+        logo_stats.keys(),
+        key=lambda x: (-logo_stats[x]["duration"], x)
+    )
+    durations = [logo_stats[logo]["duration"] for logo in logos]
+    num_logos = len(logos)
+    
+    # Dynamic bar height
+    bar_height = max(20, min(40, 400 / num_logos))
+    chart_height = max(200, num_logos * bar_height)
+    
+    # Create DataFrame
+    data = pd.DataFrame({
+        'Logo': logos,
+        'Duration': durations
+    })
+    
+    # Create Altair chart
+    chart = alt.Chart(data).mark_bar().encode(
+        y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
+            labelFont='Roboto',
+            labelFontSize=10,
+            labelColor='#1f2937',
+            titleColor='#1f2937',
+            labelPadding=10,
+            labelLimit=200
+        )),
+        x=alt.X('Duration:Q', title='Duration (seconds)', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
+        color=alt.condition(
+            alt.datum._hover,
+            alt.ColorValue('#6b7280'),
+            alt.ColorValue('#4b5563')
+        ),
+        tooltip=['Logo:N', 'Duration:Q']
+    ).properties(
+        title=f"Logo Durations",
+        width=1000,
+        height=chart_height
+    ).configure(
+        background='transparent'
+    ).configure_axis(
+        titleFont='Roboto',
+        titleFontSize=14,
+        grid=True,
+        gridColor='#e5e7eb',
+        gridOpacity=0.5
+    ).configure_title(
+        font='Roboto',
+        fontSize=18,
+        color='#1f2937',
+        anchor='middle'
+    ).configure_mark(
+        opacity=0.9,
+        stroke='#4b5563',
+        strokeWidth=1
+    ).configure_view(
+        stroke=None
+    ).interactive()
+    
+    # Display chart
+    try:
+        duration_placeholder.altair_chart(chart, use_container_width=True)
+    except Exception as e:
+        duration_placeholder.error(f"Error rendering duration chart: {str(e)}")
+
+def detect_logos(source, model_path, stframe=None, duration_container=None,
+                 fps_container=None, mem_container=None, cpu_container=None,
+                 chart_placeholder=None, conf_thres=0.25, nosave=True):
+    # Validate model input
+    if not model_path:
+        stframe.error("Error: No model uploaded. Please upload a custom YOLOv8 model (.pt).")
+        return {}
+
+    # Initialize device with enhanced GPU/CPU handling
+    try:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            gpu_name = torch.cuda.get_device_name(0)
+            stframe.info(f"Using GPU: {gpu_name}")
+            torch.cuda.empty_cache()  # Clear GPU memory before loading model
+        else:
+            device = torch.device("cpu")
+            stframe.warning("No GPU detected. Falling back to CPU.")
+    except Exception as e:
+        device = torch.device("cpu")
+        stframe.error(f"Error initializing device: {str(e)}. Falling back to CPU.")
 
     # Load model
     try:
         model = YOLO(model_path).to(device)
-       # st.write(f"Debug: Model loaded. Classes: {model.names}")
     except Exception as e:
-        stframe.error(f"Error: Failed to load YOLO model: {str(e)}")
+        stframe.error(f"Error: Failed to load YOLO model {model_path}: {str(e)}")
         return {}
 
     # Initialize video capture
@@ -158,28 +239,30 @@ def detect_logos(source, model_path, stframe, duration_container, fps_container,
 
     # Track logo stats in session state
     logo_start_frame = defaultdict(int)
+    logo_last_seen = defaultdict(lambda: -2)  # Track last second seen; -2 ensures first detection counts
     frame_num = 0
     prev_time = time.time()
 
     # Placeholders for UI updates
-    logo_placeholders = {}
     fps_placeholder = fps_container.empty()
-    fps_bar = fps_container.progress(0)
     mem_placeholder = mem_container.empty()
-    mem_bar = mem_container.progress(0)
     cpu_placeholder = cpu_container.empty()
-    cpu_bar = cpu_container.progress(0)
-
-    with duration_container:
-        st.markdown("**Detected Logos**")
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
+        # Calculate current second
+        current_second = int(frame_num / fps)  # Floor to get the current second
+
         # YOLO inference
-        results = model(frame, conf=conf_thres, verbose=False)
+        try:
+            results = model(frame, conf=conf_thres, verbose=False, device=device)
+        except Exception as e:
+            stframe.error(f"Error during inference: {str(e)}")
+            break
+
         detected_logos = set()
 
         # Process detections
@@ -192,7 +275,14 @@ def detect_logos(source, model_path, stframe, duration_container, fps_container,
                 label = model.names[class_id]
                 conf = box.conf.item()
                 detected_logos.add(label)
-                st.session_state.logo_stats.setdefault(label, {"duration": 0.0, "frames": 0})["frames"] += 1
+                # Initialize logo stats
+                if label not in st.session_state.logo_stats:
+                    st.session_state.logo_stats[label] = {"duration": 0.0, "frames": 0, "frequency": 0}
+                st.session_state.logo_stats[label]["frames"] += 1
+                # Update frequency for new appearance
+                if current_second > logo_last_seen[label] + 1:  # New appearance if not seen in previous second
+                    st.session_state.logo_stats[label]["frequency"] += 1
+                logo_last_seen[label] = current_second
 
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 bboxes.append((x1, y1, x2, y2))
@@ -222,32 +312,31 @@ def detect_logos(source, model_path, stframe, duration_container, fps_container,
         mem_val = psutil.virtual_memory().percent
         cpu_val = psutil.cpu_percent()
 
-        # Update system stats
-        fps_placeholder.markdown(f"<div class='stat-box'><b>FPS</b><br><span class='stat-value'>{fps_val} FPS</span></div>", unsafe_allow_html=True)
-        fps_bar.progress(min(int(fps_val / 30 * 100), 100))
-        mem_placeholder.markdown(f"<div class='stat-box'><b>Memory</b><br><span class='stat-value'>{mem_val}%</span></div>", unsafe_allow_html=True)
-        mem_bar.progress(int(mem_val))
-        cpu_placeholder.markdown(f"<div class='stat-box'><b>CPU</b><br><span class='stat-value'>{cpu_val}%</span></div>", unsafe_allow_html=True)
-        cpu_bar.progress(int(cpu_val))
+        # Update system stats with card styling
+        fps_placeholder.markdown(
+            f'<div class="stat-card"><h3>FPS</h3><p>{fps_val} FPS</p></div>',
+            unsafe_allow_html=True
+        )
+        mem_placeholder.markdown(
+            f'<div class="stat-card"><h3>Memory</h3><p>{mem_val}%</p></div>',
+            unsafe_allow_html=True
+        )
+        cpu_placeholder.markdown(
+            f'<div class="stat-card"><h3>CPU</h3><p>{cpu_val}%</p></div>',
+            unsafe_allow_html=True
+        )
 
-        # Update logo durations with progress bars
-        with duration_container:
-            for logo in sorted(st.session_state.logo_stats.keys()):
-                duration = st.session_state.logo_stats[logo]["duration"]
-                if logo not in logo_placeholders:
-                    placeholder = st.empty()
-                    bar = st.progress(0)
-                    logo_placeholders[logo] = {"text": placeholder, "bar": bar}
-                logo_placeholders[logo]["text"].markdown(f"**{logo}**: {duration:.2f} sec")
-                logo_placeholders[logo]["bar"].progress(min(int((duration / total_duration) * 100), 100))
+        # Update duration chart every 10 frames
+        if frame_num % 20 == 0:
+            plot_logo_duration(duration_container, frame_num, total_duration)
 
-        # Update frequency chart every 20 frames
+        # Update frequency chart every 10 frames
         if frame_num % 20 == 0:
             plot_logo_frequency(chart_placeholder, frame_num)
 
         # Display frame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        stframe.image(frame_rgb, width=640)
+        stframe.image(frame_rgb, width=820)
 
         # Save frame
         if vid_writer:
@@ -255,24 +344,24 @@ def detect_logos(source, model_path, stframe, duration_container, fps_container,
 
         frame_num += 1
 
+        # Clear GPU memory periodically to prevent memory leaks
+        if device.type == "cuda" and frame_num % 100 == 0:
+            torch.cuda.empty_cache()
+
     # Finalize durations
     for logo, start_frame in logo_start_frame.items():
         if start_frame > 0:
             duration = (frame_num - start_frame) / fps
             st.session_state.logo_stats[logo]["duration"] += duration
 
-    # Update final durations
-    with duration_container:
-        for logo in sorted(st.session_state.logo_stats.keys()):
-            duration = st.session_state.logo_stats[logo]["duration"]
-            logo_placeholders[logo]["text"].markdown(f"**{logo}**: {duration:.2f} sec")
-            logo_placeholders[logo]["bar"].progress(min(int((duration / total_duration) * 100), 100))
-
-    # Final frequency chart update
+    # Final chart updates
+    plot_logo_duration(duration_container, frame_num, total_duration)
     plot_logo_frequency(chart_placeholder, frame_num)
 
     # Clean up
     cap.release()
     if vid_writer:
         vid_writer.release()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()  # Final GPU memory cleanup
     return st.session_state.logo_stats
