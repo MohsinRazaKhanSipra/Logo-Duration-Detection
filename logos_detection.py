@@ -10,7 +10,8 @@
 # with alphabetical tie-breaking, displayed top to bottom.
 # The duration chart is a horizontal bar chart sorted by duration (highest to lowest) with alphabetical tie-breaking,
 # displayed top to bottom. Both charts use a fixed width with scrolling supported via CSS in app.py.
-# Supports loading a custom model from a specified path with enhanced GPU/CPU handling.
+# Colors for each logo class are generated dynamically using a hash-based approach to ensure consistency
+# across charts and runs, regardless of the number of classes.
 
 from ultralytics import YOLO
 import cv2
@@ -22,6 +23,24 @@ import torch
 import streamlit as st
 import pandas as pd
 import altair as alt
+import hashlib
+
+# Large color palette for dynamic class coloring
+COLOR_PALETTE = [
+    '#111827', '#b91c1c', '#15803d', '#1d4ed8', '#7e22ce', '#c2410c', '#a16207',
+    '#0e7490', '#be123c', '#4d7c0f', '#6d28d9', '#b45309', '#047857', '#7f1d1d',
+    '#3b82f6', '#9f1239', '#166534', '#5b21b6', '#d97706', '#0ea5e9', '#991b1b',
+    '#065f46', '#7c3aed', '#b45309', '#14b8a6', '#7e22ce', '#ca8a04', '#1e40af',
+    '#be185d', '#15803d'  # Add more colors if expecting many classes
+]
+
+def get_consistent_color(class_name):
+    """Generate a consistent color for a class name using hashing."""
+    # Hash the class name to get a consistent index
+    hash_object = hashlib.md5(class_name.encode())
+    hash_int = int(hash_object.hexdigest(), 16)
+    color_index = hash_int % len(COLOR_PALETTE)
+    return COLOR_PALETTE[color_index]
 
 def draw_boxes(img, bboxes, labels):
     for (x1, y1, x2, y2), label in zip(bboxes, labels):
@@ -46,7 +65,7 @@ def draw_boxes(img, bboxes, labels):
     return img
 
 def plot_logo_frequency(chart_placeholder, frame_num):
-    """Update the Altair horizontal bar chart for logo frequency with professional styling."""
+    """Update the Altair horizontal bar chart for logo frequency with consistent colors per logo."""
     logo_stats = st.session_state.logo_stats
     if not logo_stats:
         chart_placeholder.warning("No logos detected yet for frequency chart.")
@@ -60,6 +79,15 @@ def plot_logo_frequency(chart_placeholder, frame_num):
     frequencies = [logo_stats[logo]["frequency"] for logo in logos]
     num_logos = len(logos)
     
+    # Assign consistent colors using hash-based mapping
+    if "logo_colors" not in st.session_state:
+        st.session_state.logo_colors = {}
+    colors = []
+    for logo in logos:
+        if logo not in st.session_state.logo_colors:
+            st.session_state.logo_colors[logo] = get_consistent_color(logo)
+        colors.append(st.session_state.logo_colors[logo])
+    
     # Dynamic bar height
     bar_height = max(20, min(40, 400 / num_logos))
     chart_height = max(200, num_logos * bar_height)
@@ -70,7 +98,7 @@ def plot_logo_frequency(chart_placeholder, frame_num):
         'Appearances': frequencies
     })
     
-    # Create Altair chart
+    # Create Altair chart with consistent colors
     chart = alt.Chart(data).mark_bar().encode(
         y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
             labelFont='Roboto',
@@ -81,11 +109,10 @@ def plot_logo_frequency(chart_placeholder, frame_num):
             labelLimit=200
         )),
         x=alt.X('Appearances:Q', title='Appearance Count', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
-        color=alt.condition(
-            alt.datum._hover,
-            alt.ColorValue('#6b7280'),
-            alt.ColorValue('#4b5563')
-        ),
+        color=alt.Color('Logo:N', scale=alt.Scale(
+            domain=logos,
+            range=colors
+        ), legend=None),  # Remove legend for cleaner look
         tooltip=['Logo:N', 'Appearances:Q']
     ).properties(
         title=f"Logo Frequency",
@@ -119,7 +146,7 @@ def plot_logo_frequency(chart_placeholder, frame_num):
         chart_placeholder.error(f"Error rendering frequency chart: {str(e)}")
 
 def plot_logo_duration(duration_placeholder, frame_num, total_duration):
-    """Update the Altair horizontal bar chart for logo durations with professional styling."""
+    """Update the Altair horizontal bar chart for logo durations with consistent colors per logo."""
     logo_stats = st.session_state.logo_stats
     if not logo_stats:
         duration_placeholder.warning("No logos detected yet for duration chart.")
@@ -133,6 +160,15 @@ def plot_logo_duration(duration_placeholder, frame_num, total_duration):
     durations = [logo_stats[logo]["duration"] for logo in logos]
     num_logos = len(logos)
     
+    # Assign consistent colors using hash-based mapping
+    if "logo_colors" not in st.session_state:
+        st.session_state.logo_colors = {}
+    colors = []
+    for logo in logos:
+        if logo not in st.session_state.logo_colors:
+            st.session_state.logo_colors[logo] = get_consistent_color(logo)
+        colors.append(st.session_state.logo_colors[logo])
+    
     # Dynamic bar height
     bar_height = max(20, min(40, 400 / num_logos))
     chart_height = max(200, num_logos * bar_height)
@@ -143,7 +179,7 @@ def plot_logo_duration(duration_placeholder, frame_num, total_duration):
         'Duration': durations
     })
     
-    # Create Altair chart
+    # Create Altair chart with consistent colors
     chart = alt.Chart(data).mark_bar().encode(
         y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
             labelFont='Roboto',
@@ -154,11 +190,10 @@ def plot_logo_duration(duration_placeholder, frame_num, total_duration):
             labelLimit=200
         )),
         x=alt.X('Duration:Q', title='Duration (seconds)', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
-        color=alt.condition(
-            alt.datum._hover,
-            alt.ColorValue('#6b7280'),
-            alt.ColorValue('#4b5563')
-        ),
+        color=alt.Color('Logo:N', scale=alt.Scale(
+            domain=logos,
+            range=colors
+        ), legend=None),  # Remove legend for cleaner look
         tooltip=['Logo:N', 'Duration:Q']
     ).properties(
         title=f"Logo Durations",
