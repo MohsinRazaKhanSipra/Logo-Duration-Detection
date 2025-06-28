@@ -3,15 +3,10 @@
 # Description: 
 # This file contains the core logic for detecting logos in videos using a custom YOLOv8 model. 
 # It processes video frames, draws bounding boxes around detected logos, tracks logo durations, 
-# monitors system performance (FPS, memory, CPU), and updates real-time charts using Altair.
-# The frequency chart is a horizontal bar chart based on the number of distinct appearances of a logo, 
-# where an appearance is a continuous sequence of seconds in which the logo is present. 
-# Consecutive seconds count as one appearance. The chart is sorted by frequency (highest to lowest) 
-# with alphabetical tie-breaking, displayed top to bottom.
-# The duration chart is a horizontal bar chart sorted by duration (highest to lowest) with alphabetical tie-breaking,
-# displayed top to bottom. Both charts use a fixed width with scrolling supported via CSS in app.py.
-# Colors for each logo class are generated dynamically using a hash-based approach to ensure consistency
-# across charts and runs, regardless of the number of classes.
+# monitors system performance (FPS, memory, CPU), and updates real-time charts using Plotly.
+# The chart plots video timestamps along the x-axis (divided equally based on video length) and 
+# logo appearances on the y-axis, with multiple bars per logo for different start/end times.
+# Tooltips show start time, end time, duration, and frequency. Colors are generated dynamically.
 
 from ultralytics import YOLO
 import cv2
@@ -22,7 +17,7 @@ import psutil
 import torch
 import streamlit as st
 import pandas as pd
-import altair as alt
+import plotly.graph_objects as go
 import hashlib
 
 # Large color palette for dynamic class coloring
@@ -36,7 +31,6 @@ COLOR_PALETTE = [
 
 def get_consistent_color(class_name):
     """Generate a consistent color for a class name using hashing."""
-    # Hash the class name to get a consistent index
     hash_object = hashlib.md5(class_name.encode())
     hash_int = int(hash_object.hexdigest(), 16)
     color_index = hash_int % len(COLOR_PALETTE)
@@ -64,167 +58,85 @@ def draw_boxes(img, bboxes, labels):
         )
     return img
 
-def plot_logo_frequency(chart_placeholder, frame_num):
-    """Update the Altair horizontal bar chart for logo frequency with consistent colors per logo."""
+def plot_combined_logo_analysis(chart_placeholder, frame_num, total_duration):
+    """Update a Plotly horizontal bar chart showing multiple logo appearances with hover tooltips."""
     logo_stats = st.session_state.logo_stats
-    if not logo_stats:
-        chart_placeholder.warning("No logos detected yet for frequency chart.")
+    if not logo_stats or not any("appearances" in stat for stat in logo_stats.values()):
+        chart_placeholder.warning("No logos detected yet for analysis chart.")
         return
     
-    # Sort logos by frequency (descending) and alphabetically for ties
-    logos = sorted(
-        logo_stats.keys(),
-        key=lambda x: (-logo_stats[x]["frequency"], x)
-    )
-    frequencies = [logo_stats[logo]["frequency"] for logo in logos]
-    num_logos = len(logos)
-    
-    # Assign consistent colors using hash-based mapping
-    if "logo_colors" not in st.session_state:
-        st.session_state.logo_colors = {}
-    colors = []
+    # Prepare data for plotting
+    data = []
+    logos = sorted(logo_stats.keys(), key=lambda x: (-logo_stats[x]["frequency"], x))
     for logo in logos:
-        if logo not in st.session_state.logo_colors:
-            st.session_state.logo_colors[logo] = get_consistent_color(logo)
-        colors.append(st.session_state.logo_colors[logo])
+        stat = logo_stats[logo]
+        total_logo_duration = stat["duration"]
+        frequency = stat["frequency"]
+        for start, end in stat.get("appearances", []):
+            duration = end - start
+            data.append({
+                "Logo": f"{logo} ({total_logo_duration:.2f}s)",  # Updated label
+                "Start": start,
+                "End": end,
+                "Duration": duration,
+                "Frequency": frequency
+            })
     
-    # Dynamic bar height
-    bar_height = max(20, min(40, 400 / num_logos))
-    chart_height = max(200, num_logos * bar_height)
+    if not data:
+        chart_placeholder.warning("No logo appearances to display.")
+        return
     
-    # Create DataFrame
-    data = pd.DataFrame({
-        'Logo': logos,
-        'Appearances': frequencies
-    })
+    # Create Plotly figure
+    fig = go.Figure()
     
-    # Create Altair chart with consistent colors
-    chart = alt.Chart(data).mark_bar().encode(
-        y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
-            labelFont='Roboto',
-            labelFontSize=10,
-            labelColor='#1f2937',
-            titleColor='#1f2937',
-            labelPadding=10,
-            labelLimit=200
-        )),
-        x=alt.X('Appearances:Q', title='Appearance Count', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
-        color=alt.Color('Logo:N', scale=alt.Scale(
-            domain=logos,
-            range=colors
-        ), legend=None),  # Remove legend for cleaner look
-        tooltip=['Logo:N', 'Appearances:Q']
-    ).properties(
-        title=f"Logo Frequency",
+    for i, item in enumerate(data):
+        fig.add_trace(go.Bar(
+            y=[item["Logo"]],
+            x=[item["End"] - item["Start"]],
+            base=[item["Start"]],
+            orientation='h',
+            marker_color=get_consistent_color(item["Logo"].split(" (")[0]),  # Use base logo name for color
+            text=[f"{item['Duration']:.2f}s"],
+            textposition='outside',
+            hovertemplate=
+            '<b>Logo</b>: %{y}<br>'+
+            '<b>Start</b>: %{base:.2f}s<br>'+
+            '<b>End</b>: %{x:.2f}s<br>'+
+            '<b>Duration</b>: %{customdata[0]:.2f}s<br>'+
+            '<b>Frequency</b>: %{customdata[1]}<br>',
+            customdata=[[item["Duration"]], [item["Frequency"]]],
+            showlegend=False
+        ))
+    
+    # Update layout with x-axis based on video duration
+    fig.update_layout(
+        title='Logo Analysis Results',
+        xaxis_title='Video Time (seconds)',
+        yaxis_title='',
+        xaxis=dict(
+            range=[0, total_duration],
+            tickmode='linear',
+            dtick=total_duration / 10,
+            gridcolor='#e5e7eb',
+            gridwidth=0.5,
+            zeroline=False
+        ),
+        yaxis=dict(autorange="reversed"),
+        bargap=0.2,
+        height=max(200, len(data) * 40),
         width=1000,
-        height=chart_height
-    ).configure(
-        background='transparent'
-    ).configure_axis(
-        titleFont='Roboto',
-        titleFontSize=14,
-        grid=True,
-        gridColor='#e5e7eb',
-        gridOpacity=0.5
-    ).configure_title(
-        font='Roboto',
-        fontSize=18,
-        color='#1f2937',
-        anchor='middle'
-    ).configure_mark(
-        opacity=0.9,
-        stroke='#4b5563',
-        strokeWidth=1
-    ).configure_view(
-        stroke=None
-    ).interactive()
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(family="Roboto", size=12, color='#1f2937'),
+        title_font=dict(size=18, color='#1f2937')
+    )
     
     # Display chart
     try:
-        chart_placeholder.altair_chart(chart, use_container_width=True)
+        chart_placeholder.plotly_chart(fig, use_container_width=True)
     except Exception as e:
-        chart_placeholder.error(f"Error rendering frequency chart: {str(e)}")
+        chart_placeholder.error(f"Error rendering combined chart: {str(e)}")
 
-def plot_logo_duration(duration_placeholder, frame_num, total_duration):
-    """Update the Altair horizontal bar chart for logo durations with consistent colors per logo."""
-    logo_stats = st.session_state.logo_stats
-    if not logo_stats:
-        duration_placeholder.warning("No logos detected yet for duration chart.")
-        return
-    
-    # Sort logos by duration (descending) and alphabetically for ties
-    logos = sorted(
-        logo_stats.keys(),
-        key=lambda x: (-logo_stats[x]["duration"], x)
-    )
-    durations = [logo_stats[logo]["duration"] for logo in logos]
-    num_logos = len(logos)
-    
-    # Assign consistent colors using hash-based mapping
-    if "logo_colors" not in st.session_state:
-        st.session_state.logo_colors = {}
-    colors = []
-    for logo in logos:
-        if logo not in st.session_state.logo_colors:
-            st.session_state.logo_colors[logo] = get_consistent_color(logo)
-        colors.append(st.session_state.logo_colors[logo])
-    
-    # Dynamic bar height
-    bar_height = max(20, min(40, 400 / num_logos))
-    chart_height = max(200, num_logos * bar_height)
-    
-    # Create DataFrame
-    data = pd.DataFrame({
-        'Logo': logos,
-        'Duration': durations
-    })
-    
-    # Create Altair chart with consistent colors
-    chart = alt.Chart(data).mark_bar().encode(
-        y=alt.Y('Logo:N', title='', sort=None, axis=alt.Axis(
-            labelFont='Roboto',
-            labelFontSize=10,
-            labelColor='#1f2937',
-            titleColor='#1f2937',
-            labelPadding=10,
-            labelLimit=200
-        )),
-        x=alt.X('Duration:Q', title='Duration (seconds)', axis=alt.Axis(grid=True, gridColor='#e5e7eb', titleColor='#1f2937')),
-        color=alt.Color('Logo:N', scale=alt.Scale(
-            domain=logos,
-            range=colors
-        ), legend=None),  # Remove legend for cleaner look
-        tooltip=['Logo:N', 'Duration:Q']
-    ).properties(
-        title=f"Logo Durations",
-        width=1000,
-        height=chart_height
-    ).configure(
-        background='transparent'
-    ).configure_axis(
-        titleFont='Roboto',
-        titleFontSize=14,
-        grid=True,
-        gridColor='#e5e7eb',
-        gridOpacity=0.5
-    ).configure_title(
-        font='Roboto',
-        fontSize=18,
-        color='#1f2937',
-        anchor='middle'
-    ).configure_mark(
-        opacity=0.9,
-        stroke='#4b5563',
-        strokeWidth=1
-    ).configure_view(
-        stroke=None
-    ).interactive()
-    
-    # Display chart
-    try:
-        duration_placeholder.altair_chart(chart, use_container_width=True)
-    except Exception as e:
-        duration_placeholder.error(f"Error rendering duration chart: {str(e)}")
 
 def detect_logos(source, model_path, stframe=None, duration_container=None,
                  fps_container=None, mem_container=None, cpu_container=None,
@@ -273,8 +185,10 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
         vid_writer = cv2.VideoWriter(save_path, fourcc, fps, (int(cap.get(3)), int(cap.get(4))))
 
     # Track logo stats in session state
+    if "logo_stats" not in st.session_state:
+        st.session_state.logo_stats = defaultdict(lambda: {"duration": 0.0, "frames": 0, "frequency": 0, "appearances": []})
     logo_start_frame = defaultdict(int)
-    logo_last_seen = defaultdict(lambda: -2)  # Track last second seen; -2 ensures first detection counts
+    logo_last_seen = defaultdict(lambda: -2)  # Track last second seen
     frame_num = 0
     prev_time = time.time()
 
@@ -289,7 +203,7 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
             break
 
         # Calculate current second
-        current_second = int(frame_num / fps)  # Floor to get the current second
+        current_second = frame_num / fps
 
         # YOLO inference
         try:
@@ -299,8 +213,6 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
             break
 
         detected_logos = set()
-
-        # Process detections
         bboxes = []
         labels = []
         for result in results:
@@ -310,14 +222,9 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
                 label = model.names[class_id]
                 conf = box.conf.item()
                 detected_logos.add(label)
-                # Initialize logo stats
                 if label not in st.session_state.logo_stats:
-                    st.session_state.logo_stats[label] = {"duration": 0.0, "frames": 0, "frequency": 0}
+                    st.session_state.logo_stats[label] = {"duration": 0.0, "frames": 0, "frequency": 0, "appearances": []}
                 st.session_state.logo_stats[label]["frames"] += 1
-                # Update frequency for new appearance
-                if current_second > logo_last_seen[label] + 1:  # New appearance if not seen in previous second
-                    st.session_state.logo_stats[label]["frequency"] += 1
-                logo_last_seen[label] = current_second
 
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 bboxes.append((x1, y1, x2, y2))
@@ -325,15 +232,20 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
 
             frame = draw_boxes(frame, bboxes, labels)
 
-        # Update durations
-        current_frame_time = frame_num / fps
+        # Update appearances and durations
         for logo in st.session_state.logo_stats.keys():
             if logo in detected_logos:
                 if logo_start_frame[logo] == 0:
                     logo_start_frame[logo] = frame_num
             elif logo_start_frame[logo] > 0:
-                duration = (frame_num - logo_start_frame[logo]) / fps
+                start_frame = logo_start_frame[logo]
+                end_frame = frame_num
+                start_time = start_frame / fps
+                end_time = end_frame / fps
+                duration = end_time - start_time
+                st.session_state.logo_stats[logo]["appearances"].append((start_time, end_time))
                 st.session_state.logo_stats[logo]["duration"] += duration
+                st.session_state.logo_stats[logo]["frequency"] = len(st.session_state.logo_stats[logo]["appearances"])
                 logo_start_frame[logo] = 0
 
         for logo in detected_logos:
@@ -361,13 +273,9 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
             unsafe_allow_html=True
         )
 
-        # Update duration chart every 10 frames
+        # Update combined chart every 20 frames
         if frame_num % 20 == 0:
-            plot_logo_duration(duration_container, frame_num, total_duration)
-
-        # Update frequency chart every 10 frames
-        if frame_num % 20 == 0:
-            plot_logo_frequency(chart_placeholder, frame_num)
+            plot_combined_logo_analysis(chart_placeholder, frame_num, total_duration)
 
         # Display frame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -383,15 +291,19 @@ def detect_logos(source, model_path, stframe=None, duration_container=None,
         if device.type == "cuda" and frame_num % 100 == 0:
             torch.cuda.empty_cache()
 
-    # Finalize durations
+    # Finalize durations for any ongoing appearances
     for logo, start_frame in logo_start_frame.items():
         if start_frame > 0:
-            duration = (frame_num - start_frame) / fps
+            end_frame = frame_num
+            start_time = start_frame / fps
+            end_time = end_frame / fps
+            duration = end_time - start_time
+            st.session_state.logo_stats[logo]["appearances"].append((start_time, end_time))
             st.session_state.logo_stats[logo]["duration"] += duration
+            st.session_state.logo_stats[logo]["frequency"] = len(st.session_state.logo_stats[logo]["appearances"])
 
-    # Final chart updates
-    plot_logo_duration(duration_container, frame_num, total_duration)
-    plot_logo_frequency(chart_placeholder, frame_num)
+    # Final chart update
+    plot_combined_logo_analysis(chart_placeholder, frame_num, total_duration)
 
     # Clean up
     cap.release()

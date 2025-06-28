@@ -236,13 +236,17 @@ def main():
         st.subheader("Model Selection")
         uploaded_model = st.file_uploader("Upload YOLOv8 Model (.pt)", type=["pt"])
         model_path = None
+        Uploaded_model_status=False
         if uploaded_model:
             with st.spinner("Loading model..."):
                 model_path = os.path.join(tempfile.gettempdir(), f"temp_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt")
+                Uploaded_model_status=True
                 with open(model_path, "wb") as f:
                     f.write(uploaded_model.read())
+
         else:
-            model_path = os.path.join("model", "yolov12_new_dataset.pt")
+            Uploaded_model_status=False
+            model_path = r"C:\Users\shop with hope\Desktop\Development\Computer Vision\Sir Sultan\Logo-Duration-Detection\model\yolov8m_new_dataset.pt"
 
         conf_thres = st.slider(
             "Confidence Threshold",
@@ -336,11 +340,10 @@ def main():
             # Charts
             with charts_container:
                 st.markdown("### Analysis Results")
-                col1, col2 = st.columns(2)
+                col1= st.container()
                 with col1:
                     frequency_placeholder = st.empty()
-                with col2:
-                    duration_placeholder = st.empty()
+             
 
             # System stats
             with stats_container:
@@ -355,7 +358,7 @@ def main():
                 source=video_source,
                 model_path=model_path,
                 stframe=video_placeholder,
-                duration_container=duration_placeholder,
+                # duration_container=duration_placeholder,
                 fps_container=fps_container,
                 mem_container=mem_container,
                 cpu_container=cpu_container,
@@ -382,7 +385,7 @@ def main():
             # Clean up temporary files
             if temp_file and os.path.exists(temp_file):
                 os.remove(temp_file)
-            if model_path and model_path != os.path.join("model", "best.pt") and os.path.exists(model_path):
+            if Uploaded_model_status and model_path and model_path != os.path.join("model", "best.pt") and os.path.exists(model_path):
                 os.remove(model_path)
 
 if __name__ == "__main__":
