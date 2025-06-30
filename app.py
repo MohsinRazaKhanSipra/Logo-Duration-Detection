@@ -48,8 +48,12 @@ st.markdown("""
         .stButton>button:hover {
             background-color: #1d4ed8;
         }
+        .css-1x8cf1d{
+            padding: 1rem;
+            }
         .delete-button {
             background-color: #dc2626;
+            padding: 1rem;
         }
         .delete-button:hover {
             background-color: #b91c1c;
