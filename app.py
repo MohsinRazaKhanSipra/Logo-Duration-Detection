@@ -381,7 +381,8 @@ def main():
                     nosave=nosave,
                     output_video_path=output_video_path,
                     progress_bar=progress_bar,
-                    progress_text=progress_text
+                    progress_text=progress_text,
+                    chart_key=str(uuid.uuid4())
                 )
 
                 # Download buttons

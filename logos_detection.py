@@ -48,7 +48,7 @@ def draw_boxes(img, bboxes, labels):
         )
     return img
 
-def plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps):
+def plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps, chart_key):
     """Update a Plotly line plot showing multiple logo appearances with duration-based legend."""
     logo_stats = st.session_state.logo_stats
     if not logo_stats or not any("appearances" in stat for stat in logo_stats.values()):
@@ -116,12 +116,12 @@ def plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps):
     )
 
     try:
-        chart_placeholder.plotly_chart(fig, use_container_width=True)
+        chart_placeholder.plotly_chart(fig, key=chart_key, use_container_width=True)
     except Exception as e:
         chart_placeholder.error(f"Error rendering timeline chart: {str(e)}")
 
 def detect_logos(source, model_path, stframe=None, fps_container=None, mem_container=None, cpu_container=None,
-                 chart_placeholder=None, conf_thres=0.5, nosave=True, output_video_path=None, progress_bar=None, progress_text=None):
+                 chart_placeholder=None, conf_thres=0.5, nosave=True, output_video_path=None, progress_bar=None, progress_text=None, chart_key=None):
     if not os.path.exists(model_path):
         stframe.error(f"Error: Model file {model_path} not found.")
         return {}
@@ -233,7 +233,7 @@ def detect_logos(source, model_path, stframe=None, fps_container=None, mem_conta
         progress_text.markdown(f"<p class='text-sm text-gray-600'>Processed {frame_num}/{total_frames} frames ({progress*100:.1f}%)</p>", unsafe_allow_html=True)
 
         if frame_num % 20 == 0:
-            plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps)
+            plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps, chart_key)
 
         stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), width=820)
         frame_num += 1
@@ -250,7 +250,11 @@ def detect_logos(source, model_path, stframe=None, fps_container=None, mem_conta
             st.session_state.logo_stats[logo]["duration"] += duration
             st.session_state.logo_stats[logo]["frequency"] = len(st.session_state.logo_stats[logo]["appearances"])
 
-    plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps)
+
+    progress = 1
+    progress_bar.progress(progress)
+    progress_text.markdown(f"<p class='text-sm text-gray-600'>Processed {total_frames}/{total_frames} frames ({progress*100:.1f}%)</p>", unsafe_allow_html=True)
+    plot_logo_timeline(chart_placeholder, frame_num, total_duration, fps, chart_key)
     cap.release()
     if video_writer:
         video_writer.release()
