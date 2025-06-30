@@ -6,3 +6,5 @@ psutil
 yt-dlp==2025.3.31
 validators
 requests
+xlsxwrite
+plotly

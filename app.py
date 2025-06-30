@@ -269,7 +269,7 @@ def main():
             else:
                 video_input = st.text_input("Enter YouTube URL", help="e.g., https://www.youtube.com/watch?v=VIDEO_ID")
 
-            model_path = r"model\weights.pt"
+            model_path = "weights.pt"
             st.markdown('<h3 class="text-sm font-medium text-dark">Detection Settings</h3>', unsafe_allow_html=True)
             conf_thres = st.slider(
                 "Confidence Threshold",
